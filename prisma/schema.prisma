@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // swap to postgresql later
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id              // Spotify user id (stable)
+  displayName String?
+  email       String?
+  country     String?
+  product     String?                    // free/premium etc (if returned)
+  imageUrl    String?
+
+  token       Token?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  SavedTrack SavedTrack[]
+
+  Play Play[]
+}
+
+model Token {
+  userId       String   @id
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  scope        String?                   // store granted scopes to debug later
+  tokenType    String?                   // usually "Bearer"
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Track {
+  id              String   @id @default(cuid())
+  spotifyId        String?  @unique          // nullable to support local tracks later
+  name            String
+  uri             String?                   // spotify:track:...
+  isLocal         Boolean  @default(false)   // future-proof for playlists
+  durationMs      Int?
+  explicit        Boolean?
+  popularity      Int?
+  previewUrl      String?
+  isrc            String?                   // external_ids.isrc
+  spotifyUrl      String?                   // external_urls.spotify
+
+  artists         TrackArtist[]
+  audioFeatures   AudioFeatures?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([spotifyId])
+  SavedTrack SavedTrack[]
+  Play Play[]
+}
+
+model Artist {
+  id         String   @id @default(cuid())
+  spotifyId   String? @unique
+  name       String
+  uri        String?
+  spotifyUrl String?
+
+  tracks     TrackArtist[]
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([spotifyId])
+}
+
+model TrackArtist {
+  trackId   String
+  artistId  String
+  position  Int
+
+  track     Track  @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  artist    Artist @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@id([trackId, artistId])
+  @@index([artistId])
+}
+
+model AudioFeatures {
+  trackId            String  @id
+  track              Track   @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  acousticness       Float?
+  danceability       Float?
+  energy             Float?
+  instrumentalness   Float?
+  liveness           Float?
+  loudness           Float?
+  speechiness        Float?
+  valence            Float?
+  tempo              Float?
+
+  key                Int?
+  mode               Int?
+  timeSignature      Int?
+  durationMs         Int?
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model SavedTrack {
+  userId    String
+  trackId   String
+  addedAt   DateTime?
+
+  user      User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track     Track @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@id([userId, trackId])
+  @@index([trackId])
+}
+
+model Play {
+  id          String   @id @default(cuid())
+
+  userId      String
+  trackId     String
+  playedAt    DateTime
+
+  // Optional context from Spotify (playlist/album/etc)
+  contextType String?
+  contextUri  String?
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track       Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@index([userId, playedAt])
+  @@index([trackId])
+  @@unique([userId, trackId, playedAt])
+}
+
+model SyncState {
+  // Single-user singleton row
+  id                   Int      @id @default(1)
+
+  // Cursor for recently-played incremental sync
+  recentlyPlayedAfter  DateTime?
+
+  lastRunAt            DateTime?
+  lastStatus           String?  // "ok" | "error"
+  lastError            String?
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
